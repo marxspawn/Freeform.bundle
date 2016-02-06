@@ -1,4 +1,4 @@
-NAME = "Freeforn"
+NAME = "Freeform"
 SHOWS = "http://freeform.go.com/shows"
 #IMG_BASE = "http://cdn.static.freeform.com/service/image/ratio/id/%s/dim/320.16x9.jpg"
 IMG_BASE = "http://cdn.static.abcfamily.com/service/image/ratio/id/%s/dim/320.16x9.jpg"
