@@ -3,7 +3,7 @@ SHOWS = "http://freeform.go.com/shows"
 #IMG_BASE = "http://cdn.static.freeform.com/service/image/ratio/id/%s/dim/320.16x9.jpg"
 IMG_BASE = "http://cdn.static.abcfamily.com/service/image/ratio/id/%s/dim/320.16x9.jpg"
 
-ICON = R('icon-default.png')
+ICON = R('icon-default.jpg')
 ART = R('art-default.jpg')
 
 ####################################################################################################
