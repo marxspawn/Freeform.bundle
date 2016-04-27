@@ -20,12 +20,6 @@ def Start():
 def MainMenu():
 
     oc = ObjectContainer()
-
-    if not Client.Platform in ('Android', 'iOS', 'Roku', 'Safari', 'tvOS', 'Samsung'):
-        oc.header = 'Not supported'
-        oc.message = 'This channel is not supported on %s' % (Client.Platform if Client.Platform is not None else 'this client')
-        return oc
-
     html = HTML.ElementFromURL(SHOWS)
 
     for item in html.xpath('//section[@class="moduleBody"]/article'):
