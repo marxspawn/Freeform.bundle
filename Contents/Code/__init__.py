@@ -1,11 +1,13 @@
 NAME = "Freeform"
-SHOWS = "http://freeform.go.com/shows"
-#IMG_BASE = "http://cdn.static.freeform.com/service/image/ratio/id/%s/dim/320.16x9.jpg"
-IMG_BASE = "http://cdn.static.abcfamily.com/service/image/ratio/id/%s/dim/320.16x9.jpg"
+PREFIX = '/video/freeform'
+BASE_URL = "http://freeform.go.com"
 
 ICON = R('icon-default.jpg')
 ART = R('art-default.jpg')
 
+SEASONS = "http://watchabcfamily.go.com/vp2/s/carousel?service=seasons&parser=VP2_Data_Parser_Seasons&showid=%s&view=season"
+EPISODES = "http://watchabcfamily.go.com/vp2/s/carousel?service=playlists&parser=VP2_Data_Parser_Playlist&postprocess=VP2_Data_Carousel_ProcessPlaylist&showid=%s&seasonid=%s&vidtype=lf&view=showplaylist&playlistid=PL5515994&start=0&size=100&paging=1"
+RE_SHOW_ID = Regex('/(SH\d+)')
 ####################################################################################################
 def Start():
 
@@ -16,32 +18,33 @@ def Start():
     HTTP.Headers['User-Agent'] = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/39.0.2171.95 Safari/537.36'
 
 ####################################################################################################
-@handler('/video/freeform', NAME, thumb=ICON, art=ART)
+@handler(PREFIX, NAME, thumb=ICON, art=ART)
 def MainMenu():
 
     oc = ObjectContainer()
-    html = HTML.ElementFromURL(SHOWS)
+    oc.add(DirectoryObject(key=Callback(Shows, title='Featured Shows', section_id='1532518'), title='Featured Shows'))
+    oc.add(DirectoryObject(key=Callback(Shows, title='Other Shows', section_id='1703286'), title='Other Shows'))
 
-    for item in html.xpath('//section[@class="moduleBody"]/article'):
+    return oc
 
-        title = item.xpath('.//a/@title')[0]
+####################################################################################################
+@route(PREFIX + '/shows')
+def Shows(title, section_id):
+
+    oc = ObjectContainer()
+    html = HTML.ElementFromURL(BASE_URL + '/shows')
+
+    for item in html.xpath('//div[@class="modules"]//section[@data-m-id="%s"]//li' %section_id):
+
+        url = item.xpath('./a/@href')[0]
+        if '/movies-and-specials/' in url:
+            continue
+        title = url.split('/')[-1].replace('-', ' ').title()
+        url = BASE_URL + url
+        thumb = item.xpath('.//img/@src')[0]
         
-        # remove any listings for shows that do not have free episodes and movies
-        try: sign_in = item.xpath('.//h2/text()')[0]
-        except: continue
-        #if not sign_in or sign_in == 'watch full episodes':
-        if sign_in == 'watch full episodes':
-            continue
-        if title.lower() in ['abc family movies', 'freeform movies']:
-            continue
-
-        url = item.xpath('.//a/@href')
-        thumb_data = item.xpath('.//img/@data-properties')[0]
-        thumb_id = JSON.ObjectFromString(thumb_data)['image']['src']
-        thumb = IMG_BASE % thumb_id
-
         oc.add(DirectoryObject(
-            key = Callback(Episodes, url=url, title=title),
+            key = Callback(Season, url=url, title=title, thumb=thumb),
             title = title,
             thumb = Resource.ContentsOfURLWithFallback(url=thumb, fallback=ICON)
         ))
@@ -51,38 +54,80 @@ def MainMenu():
         return ObjectContainer(header="Empty", message="There are no shows listed." )
     else:
         return oc
-
 ####################################################################################################
-@route('/video/freeform/episodes')
-def Episodes(url, title):
+@route(PREFIX + '/season')
+def Season(title, url, thumb):
 
     oc = ObjectContainer(title2=title)
-    html = HTML.ElementFromURL(url)
+    show_id = GetShowID(url)
+    html = GetHTML(SEASONS % show_id)
 
-    # Locked videos have lockedEpisode in the article class, so only pulling unlocked videos
-    for item in html.xpath('//div[@data-module="latest episodes"]//article[@class="item fep available"]'):
+    for season in html.xpath('//a'):
+        title = season.text
+        season_id = season.get('seasonid')
 
-        url = item.xpath('.//h4/a/@href')[0]
-        ep_title = item.xpath('.//h4/a//text()')[0]
-        thumb_data = item.xpath('.//img/@data-properties')[0]
-        thumb_id = JSON.ObjectFromString(thumb_data)['image']['src']
-        thumb = IMG_BASE % thumb_id
-        ep_info = item.xpath('.//div/span[1]//text()')[0].strip()
-        episode = ep_info.split()[1].split('E')[1].strip()
-        season = ep_info.split('S')[1].split()[0].strip()
-        originally_available_at = Datetime.ParseDate(item.xpath('.//div/span[2]//text()')[0].strip()).date()
+        if not season_id:
+            season_id = title.rsplit(' ', 1)[1]
 
-        oc.add(EpisodeObject(
-            url = url,
-            title = ep_title,
-            show = title,
-            season = int(season),
-            index = int(episode),
-            thumb = Resource.ContentsOfURLWithFallback(url=thumb, fallback=ICON),
-            originally_available_at = originally_available_at
+        oc.add(DirectoryObject(
+            key = Callback(Episodes, title=title, show_id=show_id, season=season_id),
+            title = title,
+            thumb = Resource.ContentsOfURLWithFallback(url=thumb, fallback=ICON)
         ))
 
     if len(oc) < 1:
-        return ObjectContainer(header="Empty", message="There are currently no unlocked videos available for this show." )
+        Log ('still no value for objects')
+        return ObjectContainer(header="Empty", message="There are no seasons listed." )
     else:
         return oc
+
+####################################################################################################
+@route(PREFIX + '/episodes')
+def Episodes(title, show_id, season):
+
+    oc = ObjectContainer(title2=title)
+    html = GetHTML(EPISODES % (show_id, season))
+
+    for episode in html.xpath('//div[contains(@class, "reg_tile")]'):
+
+        url = episode.xpath('.//a/@href')[0]
+
+        title = episode.xpath('./div[@class="tile_title"]/a/text()')[0]
+        duration = int(episode.xpath('./@duration')[0])
+        try: summary = episode.xpath('./div[@class="tile_desc"]/text()')[0]
+        except: summary = ''
+        thumb = episode.xpath('./div[@class="thumb"]/a/img/@src')[0]
+        air_date = episode.xpath('./div[@class="show_tile_sub"]/text()')[0].split('Aired ')[1]
+        originally_available_at = Datetime.ParseDate(air_date).date()
+
+        oc.add(VideoClipObject(
+            url = '%s#%s' % (url, show_id),
+            title = title,
+            summary = summary,
+            duration = duration,
+            thumb = Resource.ContentsOfURLWithFallback(url=thumb)
+        ))
+
+    if len(oc) < 1:
+        Log ('still no value for objects')
+        return ObjectContainer(header="Empty", message="There are no unlocked videos for this show." )
+    else:
+        return oc
+
+####################################################################################################
+def GetHTML(url):
+
+    try: html = HTML.ElementFromURL(url, sleep=5.0)
+    except: html = HTML.ElementFromURL(url, cacheTime=0)
+
+    return html
+####################################################################################################
+@route(PREFIX + '/getshowid')
+def GetShowID(url):
+
+    try: content = HTTP.Request(url, cacheTime=CACHE_1DAY).content
+    except: content = ''
+    try: show_id = RE_SHOW_ID.search(content).group(1)
+    except: show_id = ''
+
+    return show_id
