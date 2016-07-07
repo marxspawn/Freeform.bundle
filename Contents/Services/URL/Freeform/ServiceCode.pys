@@ -1,5 +1,6 @@
 HTTP_HEADERS = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_8_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/33.0.1750.117 Safari/537.36'}
-RE_SXX_EXX = Regex('Season (\d+).+Episode (\d+)')
+NAMESPACE = {'a': 'http://abc.go.com/vp2/ws/xmlns'}
+DATA_URL = 'http://api.contents.watchabc.go.com/vp2/ws/s/contents/3000/videos/002/001/-1/-1/-1/%s/-1/-1?v=08.00'
 
 ####################################################################################################
 def NormalizeURL(url):
@@ -9,46 +10,28 @@ def NormalizeURL(url):
 ####################################################################################################
 def MetadataObjectForURL(url):
 
-	try:
-		html = HTML.ElementFromURL(url, headers=HTTP_HEADERS, cacheTime=CACHE_1HOUR)
-	except:
-		raise Ex.MediaNotAvailable
-
-	# Expired and unavailable media redirects to the home page. Instead of catching (multiple)
-	# redirects we check if there is a 'og:url' HTML element.
-	og_url = html.xpath('//meta[@property="og:url"]')
-
-	if len(og_url) < 1:
-		raise Ex.MediaNotAvailable
-
-	(show_title, episode_title) = html.xpath('//title/text()')[0].split(' | ')[0].split(' : ')
-	summary = html.xpath('//meta[@property="og:title"]/@content')[0]
-
-	try:
-		sxx_exx = html.xpath('//title/text()')[0]
-		(season, index) = RE_SXX_EXX.search(sxx_exx).groups()
-	except:
-		season = None
-		index = None
-
-	thumb = html.xpath('//meta[@property="og:image"]/@content')
-
-	if len(thumb) < 1:
-		thumb = html.xpath('//meta[@name="twitter:image"]/@content')
-
-	if len(thumb) < 1:
-		thumb = html.xpath('//meta[@name="ogImageFromApi"]/@content')
-
-	if len(thumb) < 1:
-		thumb = ''
+	xml = GetDataURL(url)
+	show_title = xml.xpath('//a:video/a:title/text()', NAMESPACE)[0]
+	if ' : ' in show_title or  ' | ' in show_title:
+		episode_title = show_title.split(' | ')[1].split(' : ')[1]
+		show_title = show_title.split(' | ')[0].split(' : ')[0]
 	else:
-		thumb = thumb[0]
+		episode_title = show_title
+	summary = xml.xpath('//a:video/a:longdescription/text()', NAMESPACE)[0]
+	duration = xml.xpath('//a:video/a:duration/text()', NAMESPACE)[0]
+	airdate = xml.xpath('//a:video/a:airdates/a:airdate/text()', NAMESPACE)[0]
+	date = Datetime.ParseDate(airdate)
+	index = xml.xpath('//a:video/a:episodenumber/text()', NAMESPACE)[0]
+	season = xml.xpath('//a:video/a:season/@num', NAMESPACE)[0]
+	thumb = xml.xpath('//a:video/a:thumbnails/a:thumbnail/text()', NAMESPACE)[0]
 
 	return EpisodeObject(
 		show = show_title,
 		title = episode_title,
 		season = int(season) if season else None,
 		index = int(index) if index else None,
+		duration = int(duration) if duration else None,
+		originally_available_at = date,
 		summary = summary,
 		thumb = Resource.ContentsOfURLWithFallback(thumb)
 	)
@@ -99,11 +82,23 @@ def PlayVideo(f4m_url=None, **kwargs):
 ####################################################################################################
 def GetVideoId(url):
 
-	html = HTML.ElementFromURL(url, headers=HTTP_HEADERS, cacheTime=CACHE_1HOUR)
+	if 'VDKA' in url:
+		video_id = url.split('VDKA')[-1].split('/')[0].split('#')[0]
+	else:
+		try: video_id = HTML.ElementFromURL(url, headers=HTTP_HEADERS, cacheTime=CACHE_1HOUR).xpath('//div[@id="playerContainer"]/@data-video-id')
+		except: video_id = None
 
-	# Loop over attribute values, because we can't grab the right one directly because of a missing namespace declaration(?)
-	for value in html.xpath('//div[@id="vp2k_container"]/@*'):
-		if value.startswith('VDKA'):
-			return value.split('VDKA')[-1]
+	return video_id
+####################################################################################################
+def GetDataURL(url):
 
-	return None
+	video_id = GetVideoId(url)
+    
+	if video_id:
+		try: xml = XML.ElementFromURL(DATA_URL %video_id)
+		except: xml = None
+	
+	if xml:
+		return xml
+	else:
+		raise Ex.MediaNotAvailable
