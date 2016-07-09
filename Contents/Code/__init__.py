@@ -2,12 +2,13 @@ NAME = "Freeform"
 PREFIX = '/video/freeform'
 BASE_URL = "http://freeform.go.com"
 
-ICON = R('icon-default.jpg')
-ART = R('art-default.jpg')
+ICON = 'icon-default.jpg'
+ART = 'art-default.jpg'
 
 SEASONS = "http://watchabcfamily.go.com/vp2/s/carousel?service=seasons&parser=VP2_Data_Parser_Seasons&showid=%s&view=season"
 EPISODES = "http://watchabcfamily.go.com/vp2/s/carousel?service=playlists&parser=VP2_Data_Parser_Playlist&postprocess=VP2_Data_Carousel_ProcessPlaylist&showid=%s&seasonid=%s&vidtype=lf&view=showplaylist&playlistid=PL5515994&start=0&size=100&paging=1"
 RE_SHOW_ID = Regex('/(SH\d+)')
+
 ####################################################################################################
 def Start():
 
@@ -54,6 +55,7 @@ def Shows(title, section_id):
         return ObjectContainer(header="Empty", message="There are no shows listed." )
     else:
         return oc
+
 ####################################################################################################
 @route(PREFIX + '/season')
 def Season(title, url, thumb):
@@ -63,6 +65,7 @@ def Season(title, url, thumb):
     html = GetHTML(SEASONS % show_id)
 
     for season in html.xpath('//a'):
+
         title = season.text
         season_id = season.get('seasonid')
 
@@ -121,6 +124,7 @@ def GetHTML(url):
     except: html = HTML.ElementFromURL(url, cacheTime=0)
 
     return html
+
 ####################################################################################################
 @route(PREFIX + '/getshowid')
 def GetShowID(url):
