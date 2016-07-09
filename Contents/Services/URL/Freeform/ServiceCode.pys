@@ -11,19 +11,19 @@ def NormalizeURL(url):
 def MetadataObjectForURL(url):
 
 	xml = GetDataURL(url)
-	show_title = xml.xpath('//a:video/a:title/text()', NAMESPACE)[0]
+	show_title = xml.xpath('//a:video/a:title/text()', namespaces=NAMESPACE)[0]
 	if ' : ' in show_title or  ' | ' in show_title:
 		episode_title = show_title.split(' | ')[1].split(' : ')[1]
 		show_title = show_title.split(' | ')[0].split(' : ')[0]
 	else:
 		episode_title = show_title
-	summary = xml.xpath('//a:video/a:longdescription/text()', NAMESPACE)[0]
-	duration = xml.xpath('//a:video/a:duration/text()', NAMESPACE)[0]
-	airdate = xml.xpath('//a:video/a:airdates/a:airdate/text()', NAMESPACE)[0]
+	summary = xml.xpath('//a:video/a:longdescription/text()', namespaces=NAMESPACE)[0]
+	duration = xml.xpath('//a:video/a:duration/text()', namespaces=NAMESPACE)[0]
+	airdate = xml.xpath('//a:video/a:airdates/a:airdate/text()', namespaces=NAMESPACE)[0]
 	date = Datetime.ParseDate(airdate)
-	index = xml.xpath('//a:video/a:episodenumber/text()', NAMESPACE)[0]
-	season = xml.xpath('//a:video/a:season/@num', NAMESPACE)[0]
-	thumb = xml.xpath('//a:video/a:thumbnails/a:thumbnail/text()', NAMESPACE)[0]
+	index = xml.xpath('//a:video/a:episodenumber/text()', namespaces=NAMESPACE)[0]
+	season = xml.xpath('//a:video/a:season/@num', namespaces=NAMESPACE)[0]
+	thumb = xml.xpath('//a:video/a:thumbnails/a:thumbnail/text()', namespaces=NAMESPACE)[0]
 
 	return EpisodeObject(
 		show = show_title,
@@ -89,6 +89,7 @@ def GetVideoId(url):
 		except: video_id = None
 
 	return video_id
+
 ####################################################################################################
 def GetDataURL(url):
 
