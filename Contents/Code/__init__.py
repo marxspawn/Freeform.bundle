@@ -5,8 +5,7 @@ BASE_URL = "http://freeform.go.com"
 ICON = 'icon-default.jpg'
 ART = 'art-default.jpg'
 
-SEASONS = "http://watchabcfamily.go.com/vp2/s/carousel?service=seasons&parser=VP2_Data_Parser_Seasons&showid=%s&view=season"
-EPISODES = "http://watchabcfamily.go.com/vp2/s/carousel?service=playlists&parser=VP2_Data_Parser_Playlist&postprocess=VP2_Data_Carousel_ProcessPlaylist&showid=%s&seasonid=%s&vidtype=lf&view=showplaylist&playlistid=PL5515994&start=0&size=100&paging=1"
+VIDEOS = 'http://api.contents.watchabc.go.com/vp2/ws/s/contents/3000/videos/002/001/-1/%s/-1/-1/-1/-1.json'
 RE_SHOW_ID = Regex('/(SH\d+)')
 
 ####################################################################################################
@@ -23,10 +22,23 @@ def Start():
 def MainMenu():
 
     oc = ObjectContainer()
-    oc.add(DirectoryObject(key=Callback(Shows, title='Featured Shows', section_id='1532518'), title='Featured Shows'))
-    oc.add(DirectoryObject(key=Callback(Shows, title='Other Shows', section_id='1703286'), title='Other Shows'))
+    html = HTML.ElementFromURL(BASE_URL + '/shows')
 
-    return oc
+    for item in html.xpath('//section[contains(@data-m-name,"tilegroup")]'):
+
+        section_id = item.xpath('./@id')[0]
+        title = section_id.replace('-', ' ').title()
+        
+        oc.add(DirectoryObject(
+            key = Callback(Shows, section_id=section_id, title=title),
+            title = title
+        ))
+
+    if len(oc) < 1:
+        Log ('still no value for objects')
+        return ObjectContainer(header="Empty", message="There are no shows listed." )
+    else:
+        return oc
 
 ####################################################################################################
 @route(PREFIX + '/shows')
@@ -35,7 +47,8 @@ def Shows(title, section_id):
     oc = ObjectContainer()
     html = HTML.ElementFromURL(BASE_URL + '/shows')
 
-    for item in html.xpath('//div[@class="modules"]//section[@data-m-id="%s"]//li' %section_id):
+    #for item in html.xpath('//div[@class="modules"]//section[@data-m-id="%s"]//li' %section_id):
+    for item in html.xpath('//div[@class="modules"]//section[@id="%s"]//li' %section_id):
 
         url = item.xpath('./a/@href')[0]
         if '/movies-and-specials/' in url:
@@ -45,7 +58,7 @@ def Shows(title, section_id):
         thumb = item.xpath('.//img/@src')[0]
         
         oc.add(DirectoryObject(
-            key = Callback(Season, url=url, title=title, thumb=thumb),
+            key = Callback(Episodes, url=url, title=title),
             title = title,
             thumb = Resource.ContentsOfURLWithFallback(url=thumb, fallback=ICON)
         ))
@@ -57,58 +70,27 @@ def Shows(title, section_id):
         return oc
 
 ####################################################################################################
-@route(PREFIX + '/season')
-def Season(title, url, thumb):
+@route(PREFIX + '/newepisodes')
+def Episodes(url, title):
 
     oc = ObjectContainer(title2=title)
     show_id = GetShowID(url)
-    html = GetHTML(SEASONS % show_id)
+    json = JSON.ObjectFromURL(VIDEOS % (show_id))
 
-    for season in html.xpath('//a'):
+    for episode in json['video']:
 
-        title = season.text
-        season_id = season.get('seasonid')
+        if 'accesslevel' in episode and episode['accesslevel'] != "0":
+            continue
 
-        if not season_id:
-            season_id = title.rsplit(' ', 1)[1]
-
-        oc.add(DirectoryObject(
-            key = Callback(Episodes, title=title, show_id=show_id, season=season_id),
-            title = title,
-            thumb = Resource.ContentsOfURLWithFallback(url=thumb, fallback=ICON)
-        ))
-
-    if len(oc) < 1:
-        Log ('still no value for objects')
-        return ObjectContainer(header="Empty", message="There are no seasons listed." )
-    else:
-        return oc
-
-####################################################################################################
-@route(PREFIX + '/episodes')
-def Episodes(title, show_id, season):
-
-    oc = ObjectContainer(title2=title)
-    html = GetHTML(EPISODES % (show_id, season))
-
-    for episode in html.xpath('//div[contains(@class, "reg_tile")]'):
-
-        url = episode.xpath('.//a/@href')[0]
-
-        title = episode.xpath('./div[@class="tile_title"]/a/text()')[0]
-        duration = int(episode.xpath('./@duration')[0])
-        try: summary = episode.xpath('./div[@class="tile_desc"]/text()')[0]
-        except: summary = ''
-        thumb = episode.xpath('./div[@class="thumb"]/a/img/@src')[0]
-        air_date = episode.xpath('./div[@class="show_tile_sub"]/text()')[0].split('Aired ')[1]
-        originally_available_at = Datetime.ParseDate(air_date).date()
-
-        oc.add(VideoClipObject(
-            url = '%s#%s' % (url, show_id),
-            title = title,
-            summary = summary,
-            duration = duration,
-            thumb = Resource.ContentsOfURLWithFallback(url=thumb)
+        oc.add(EpisodeObject(
+            url = episode['url'],
+            title = episode['title'],
+            summary = episode['longdescription'],
+            index = int(episode['episodenumber']),
+            season = int(episode['season']['num']),
+            duration = int(episode['duration']['value']),
+            originally_available_at = Datetime.ParseDate(episode['airdates']['airdate'][0]).date(),
+            thumb = Resource.ContentsOfURLWithFallback(url=episode['thumbnails']['thumbnail'][0]['value'])
         ))
 
     if len(oc) < 1:
@@ -116,14 +98,6 @@ def Episodes(title, show_id, season):
         return ObjectContainer(header="Empty", message="There are no unlocked videos for this show." )
     else:
         return oc
-
-####################################################################################################
-def GetHTML(url):
-
-    try: html = HTML.ElementFromURL(url, sleep=5.0)
-    except: html = HTML.ElementFromURL(url, cacheTime=0)
-
-    return html
 
 ####################################################################################################
 @route(PREFIX + '/getshowid')
