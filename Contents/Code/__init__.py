@@ -7,6 +7,8 @@ ART = 'art-default.jpg'
 
 VIDEOS = 'http://api.contents.watchabc.go.com/vp2/ws/s/contents/3000/videos/002/001/-1/%s/-1/-1/-1/-1.json'
 RE_SHOW_ID = Regex('/(SH\d+)')
+# Skip the Movies and Specials and Fall In Love (also movies) sections since only one is ever unlocked
+EXCLUDE_SECTIONS = ['1954604', '1701911']
 
 ####################################################################################################
 def Start():
@@ -24,10 +26,12 @@ def MainMenu():
     oc = ObjectContainer()
     html = HTML.ElementFromURL(BASE_URL + '/shows')
 
-    for item in html.xpath('//section[contains(@data-m-name,"tilegroup")]'):
+    for item in html.xpath('//section[@data-m-type="tilegroup"]'):
 
-        section_id = item.xpath('./@id')[0]
-        title = section_id.replace('-', ' ').title()
+        section_id = item.xpath('./@data-m-id')[0]
+        if section_id in EXCLUDE_SECTIONS:
+            continue
+        title = item.xpath('.//h2/text()')[0].title()
         
         oc.add(DirectoryObject(
             key = Callback(Shows, section_id=section_id, title=title),
@@ -36,7 +40,7 @@ def MainMenu():
 
     if len(oc) < 1:
         Log ('still no value for objects')
-        return ObjectContainer(header="Empty", message="There are no shows listed." )
+        return ObjectContainer(header="Empty", message="There are no sections to list." )
     else:
         return oc
 
@@ -47,15 +51,14 @@ def Shows(title, section_id):
     oc = ObjectContainer()
     html = HTML.ElementFromURL(BASE_URL + '/shows')
 
-    #for item in html.xpath('//div[@class="modules"]//section[@data-m-id="%s"]//li' %section_id):
-    for item in html.xpath('//div[@class="modules"]//section[@id="%s"]//li' %section_id):
+    for item in html.xpath('//div[@class="modules"]//section[@data-m-id="%s"]//li' %section_id):
 
         url = item.xpath('./a/@href')[0]
-        if '/movies-and-specials/' in url:
-            continue
         title = url.split('/')[-1].replace('-', ' ').title()
         url = BASE_URL + url
         thumb = item.xpath('.//img/@src')[0]
+        if '/movies-and-specials/' in url:
+            continue
         
         oc.add(DirectoryObject(
             key = Callback(Episodes, url=url, title=title),
@@ -65,12 +68,12 @@ def Shows(title, section_id):
 
     if len(oc) < 1:
         Log ('still no value for objects')
-        return ObjectContainer(header="Empty", message="There are no shows listed." )
+        return ObjectContainer(header="Empty", message="There are no shows for this section." )
     else:
         return oc
 
 ####################################################################################################
-@route(PREFIX + '/newepisodes')
+@route(PREFIX + '/episodes')
 def Episodes(url, title):
 
     oc = ObjectContainer(title2=title)

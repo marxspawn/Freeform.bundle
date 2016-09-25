@@ -1,7 +1,4 @@
-HTTP_HEADERS = {
-	'User-Agent': 'ABC/5.0.3(iPad4,4; cpu iPhone OS 9_3_4 like mac os x; en-nl) CFNetwork/758.5.3 Darwin/15.6.0',
-	'appversion': '5.0.0'
-}
+HTTP_HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/53.0.2785.116 Safari/537.36'}
 
 METADATA_URL = 'http://api.contents.watchabc.go.com/vp2/ws/s/contents/3000/videos/002/001/-1/-1/-1/%s/-1/-1.json'
 ENTITLEMENT_URL = 'https://api.entitlement.watchabc.go.com/vp2/ws-secure/entitlement/2020/authorize.json'
@@ -17,7 +14,6 @@ def MetadataObjectForURL(url):
 	video_id = GetVideoId(url)
 	json_obj = JSON.ObjectFromURL(METADATA_URL % (video_id), headers=HTTP_HEADERS)
 	date = json_obj['video'][0]['airdates']['airdate'][0]
-	Log('the value of date is %s' %date)
 	date = Datetime.ParseDate(date).date()
 
 	return EpisodeObject(
@@ -29,7 +25,7 @@ def MetadataObjectForURL(url):
 		originally_available_at = date,
 		season = int(json_obj['video'][0]['season']['num']),
 		index = int(json_obj['video'][0]['episodenumber']),
-		thumb = json_obj['video'][0]['thumbnails']['thumbnail'][0]['value']
+		thumb = Resource.ContentsOfURLWithFallback(url=json_obj['video'][0]['thumbnails']['thumbnail'][0]['value'])
 	)
 
 ####################################################################################################
@@ -37,9 +33,9 @@ def MediaObjectsForURL(url):
 
 	return [
 		MediaObject(
-			video_resolution = 720,
 			optimized_for_streaming = True,
-			audio_channels = 2,
+			protocol = 'hls',
+			container = 'mpegts',
 			parts = [
 				PartObject(key=HTTPLiveStreamURL(Callback(PlayVideo, url=url)))
 			]
@@ -57,16 +53,16 @@ def PlayVideo(url, **kwargs):
 
 	post_values = {
 		'video_id': video_id,
-		'mvpd': 'None',
-		'token_type': 'ap',
-		'uplynk_ct': 'a',
 		'video_type': 'lf',
-		'brand': '001',
+		'brand': '002',
 		'device': '002'
 	}
 
 	json_obj = JSON.ObjectFromURL(ENTITLEMENT_URL, values=post_values, headers=HTTP_HEADERS)
-	session_key = json_obj['uplynkData']['sessionKey']
+	try: session_key = json_obj['uplynkData']['sessionKey']
+	except:
+		Log('unable to get session key. Content of authorization is %s' %HTTP.Request(ENTITLEMENT_URL, values=post_values, headers=HTTP_HEADERS).content)
+		raise Ex.MediaNotAvailable
 
 	video_url = '%s?%s' % (m3u8_base_url, session_key)
 
