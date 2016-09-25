@@ -49,7 +49,14 @@ def PlayVideo(url, **kwargs):
 	video_id = GetVideoId(url)
 	json_obj = JSON.ObjectFromURL(METADATA_URL % (video_id), headers=HTTP_HEADERS)
 
-	m3u8_base_url = json_obj['video'][0]['assets']['asset'][0]['value']
+	# Some videos have a MOV and m3u8 asset, so we need to make sure we pull the m3u8 asset
+	m3u8_base_url = None
+	for asset in json_obj['video'][0]['assets']['asset']:
+		if asset['value'].endswith('.m3u8'):
+			m3u8_base_url = asset['value']
+			break
+	if not m3u8_base_url:
+		raise Ex.MediaNotAvailable
 
 	post_values = {
 		'video_id': video_id,
