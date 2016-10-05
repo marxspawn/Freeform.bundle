@@ -1,6 +1,7 @@
-HTTP_HEADERS = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_8_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/33.0.1750.117 Safari/537.36'}
-NAMESPACE = {'a': 'http://abc.go.com/vp2/ws/xmlns'}
-DATA_URL = 'http://api.contents.watchabc.go.com/vp2/ws/s/contents/3000/videos/002/001/-1/-1/-1/%s/-1/-1?v=08.00'
+HTTP_HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/53.0.2785.116 Safari/537.36'}
+
+METADATA_URL = 'http://api.contents.watchabc.go.com/vp2/ws/s/contents/3000/videos/002/001/-1/-1/-1/%s/-1/-1.json'
+ENTITLEMENT_URL = 'https://api.entitlement.watchabc.go.com/vp2/ws-secure/entitlement/2020/authorize.json'
 
 ####################################################################################################
 def NormalizeURL(url):
@@ -10,96 +11,85 @@ def NormalizeURL(url):
 ####################################################################################################
 def MetadataObjectForURL(url):
 
-	xml = GetDataURL(url)
-	show_title = xml.xpath('//a:video/a:title/text()', namespaces=NAMESPACE)[0]
-	if ' : ' in show_title or  ' | ' in show_title:
-		episode_title = show_title.split(' | ')[1].split(' : ')[1]
-		show_title = show_title.split(' | ')[0].split(' : ')[0]
-	else:
-		episode_title = show_title
-	summary = xml.xpath('//a:video/a:longdescription/text()', namespaces=NAMESPACE)[0]
-	duration = xml.xpath('//a:video/a:duration/text()', namespaces=NAMESPACE)[0]
-	airdate = xml.xpath('//a:video/a:airdates/a:airdate/text()', namespaces=NAMESPACE)[0]
-	date = Datetime.ParseDate(airdate)
-	index = xml.xpath('//a:video/a:episodenumber/text()', namespaces=NAMESPACE)[0]
-	season = xml.xpath('//a:video/a:season/@num', namespaces=NAMESPACE)[0]
-	thumb = xml.xpath('//a:video/a:thumbnails/a:thumbnail/text()', namespaces=NAMESPACE)[0]
+	video_id = GetVideoId(url)
+	json_obj = JSON.ObjectFromURL(METADATA_URL % (video_id), headers=HTTP_HEADERS)
+	date = json_obj['video'][0]['airdates']['airdate'][0]
+	date = Datetime.ParseDate(date).date()
 
 	return EpisodeObject(
-		show = show_title,
-		title = episode_title,
-		season = int(season) if season else None,
-		index = int(index) if index else None,
-		duration = int(duration) if duration else None,
+		show = json_obj['video'][0]['show']['title'],
+		title = json_obj['video'][0]['title'],
+		summary = json_obj['video'][0]['longdescription'],
+		duration = int(json_obj['video'][0]['duration']['value']),
+		content_rating = json_obj['video'][0]['tvrating'],
 		originally_available_at = date,
-		summary = summary,
-		thumb = Resource.ContentsOfURLWithFallback(thumb)
+		season = int(json_obj['video'][0]['season']['num']),
+		index = int(json_obj['video'][0]['episodenumber']),
+		thumb = Resource.ContentsOfURLWithFallback(url=json_obj['video'][0]['thumbnails']['thumbnail'][0]['value'])
 	)
 
 ####################################################################################################
 def MediaObjectsForURL(url):
 
-	video_id = GetVideoId(url)
-
-	if not video_id:
-		raise Ex.MediaNotAvailable
-
-	storage_id = 1571
-
-	f4m_url = 'http://cdnapi.kaltura.com/p/585231/sp/58523100/playManifest/entryId/%s/format/http/protocol/http/cdnHost/cdnbakmi.kaltura.com/storageId/%d/uiConfId/8628152/tags/uplynk/a/a.f4m' % (video_id, storage_id)
-
 	return [
 		MediaObject(
+			optimized_for_streaming = True,
 			protocol = 'hls',
 			container = 'mpegts',
-			video_codec = VideoCodec.H264,
-			video_resolution = '1080',
-			audio_codec = AudioCodec.AAC,
-			audio_channels = 2,
-			optimized_for_streaming = True,
 			parts = [
-				PartObject(
-					key = Callback(PlayVideo, f4m_url=f4m_url, post_url=f4m_url, ext='m3u8')
-				)
+				PartObject(key=HTTPLiveStreamURL(Callback(PlayVideo, url=url)))
 			]
 		)
 	]
 
 ####################################################################################################
 @indirect
-def PlayVideo(f4m_url=None, **kwargs):
+def PlayVideo(url, **kwargs):
 
-	if not f4m_url:
+	video_id = GetVideoId(url)
+	json_obj = JSON.ObjectFromURL(METADATA_URL % (video_id), headers=HTTP_HEADERS)
+
+	# Some videos have a MOV and m3u8 asset, so we need to make sure we pull the m3u8 asset
+	m3u8_base_url = None
+	for asset in json_obj['video'][0]['assets']['asset']:
+		if asset['value'].endswith('.m3u8'):
+			m3u8_base_url = asset['value']
+			break
+	if not m3u8_base_url:
 		raise Ex.MediaNotAvailable
 
-	try:
-		xml = XML.ElementFromURL(f4m_url)
-		video_url = xml.xpath('//a:media/@url', namespaces={'a': 'http://ns.adobe.com/f4m/1.0'})[0]
-		return IndirectResponse(VideoClipObject, key=HTTPLiveStreamURL(url=video_url))
+	post_values = {
+		'video_id': video_id,
+		'video_type': 'lf',
+		'brand': '002',
+		'device': '002'
+	}
+
+	json_obj = JSON.ObjectFromURL(ENTITLEMENT_URL, values=post_values, headers=HTTP_HEADERS)
+	try: session_key = json_obj['uplynkData']['sessionKey']
 	except:
+		Log('unable to get session key. Content of authorization is %s' %HTTP.Request(ENTITLEMENT_URL, values=post_values, headers=HTTP_HEADERS).content)
 		raise Ex.MediaNotAvailable
+
+	video_url = '%s?%s' % (m3u8_base_url, session_key)
+
+	return IndirectResponse(VideoClipObject, key=HTTPLiveStreamURL(url=video_url))
 
 ####################################################################################################
 def GetVideoId(url):
 
-	if 'VDKA' in url:
-		video_id = url.split('VDKA')[-1].split('/')[0].split('#')[0]
+	if url.startswith('abc://'):
+		return url.split('abc://')[-1]
 	else:
-		try: video_id = HTML.ElementFromURL(url, headers=HTTP_HEADERS, cacheTime=CACHE_1HOUR).xpath('//div[@id="playerContainer"]/@data-video-id')
-		except: video_id = None
 
-	return video_id
+		try:
+			html = HTML.ElementFromURL(url)
+		except:
+			raise Ex.MediaNotAvailable
 
-####################################################################################################
-def GetDataURL(url):
+		video_id = html.xpath('//div[@data-video-id]/@data-video-id')
 
-	video_id = GetVideoId(url)
-    
-	if video_id:
-		try: xml = XML.ElementFromURL(DATA_URL %video_id)
-		except: xml = None
-	
-	if xml:
-		return xml
-	else:
-		raise Ex.MediaNotAvailable
+		if len(video_id) < 1:
+			raise Ex.MediaNotAvailable
+		else:
+			return video_id[0]
