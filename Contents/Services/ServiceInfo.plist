@@ -8,8 +8,7 @@
 		<dict>
 			<key>URLPatterns</key>
 			<array>
-				<string>^http:\/\/freeform\.go\.com\/shows\/[^\/]+\/episode\-guide\/season-\d+\/\d+\-.+</string>
-				<string>^http://(watch)?abcfamily\.go\.com/.+/SH\d+/VD(KA\d_[^/]+|\d+)(/.+)?</string>
+				<string>^freeform:\/\/.+</string>
 			</array>
 		</dict>
 	</dict>

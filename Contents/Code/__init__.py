@@ -1,114 +1,136 @@
-NAME = "Freeform"
-PREFIX = '/video/freeform'
-BASE_URL = "http://freeform.go.com"
+import ssl, urllib2
 
-ICON = 'icon-default.jpg'
+NAME = 'Freeform'
 ART = 'art-default.jpg'
+ICON = 'icon-default.jpg'
 
-VIDEOS = 'http://api.contents.watchabc.go.com/vp2/ws/s/contents/3000/videos/002/001/-1/%s/-1/-1/-1/-1.json'
-RE_SHOW_ID = Regex('/(SH\d+)')
-# Skip the Movies and Specials and Fall In Love (also movies) sections since only one is ever unlocked
-EXCLUDE_SECTIONS = ['1954604', '1701911']
+ALL_SHOWS = 'https://api.mobile.aws.abcf.seabc.go.com/api/search-index.json'
+SHOW_EPISODES = 'https://api.mobile.aws.abcf.seabc.go.com/api/shows/%s'
+
+HTTP_HEADERS = {
+	'User-Agent': 'ABCFamily/4.2.1 (iPad; iOS 10.2.1; Scale/2.00)'
+}
 
 ####################################################################################################
 def Start():
 
-    ObjectContainer.title1 = NAME
-    ObjectContainer.art = R(ART)
-    DirectoryObject.thumb = R(ICON)
-    HTTP.CacheTime = CACHE_1HOUR
-    HTTP.Headers['User-Agent'] = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/39.0.2171.95 Safari/537.36'
+	ObjectContainer.title1 = NAME
+	HTTP.CacheTime = CACHE_1HOUR
+	HTTP.ClearCache()
 
 ####################################################################################################
-@handler(PREFIX, NAME, thumb=ICON, art=ART)
+@handler('/video/freeform', NAME, art=ART, thumb=ICON)
 def MainMenu():
 
-    oc = ObjectContainer()
-    html = HTML.ElementFromURL(BASE_URL + '/shows')
+	oc = ObjectContainer()
+	json_obj = JSON.ObjectFromString(GetData(ALL_SHOWS))
 
-    for item in html.xpath('//section[@data-m-type="tilegroup"]'):
+	for show in json_obj['shows']:
 
-        section_id = item.xpath('./@data-m-id')[0]
-        if section_id in EXCLUDE_SECTIONS:
-            continue
-        title = item.xpath('.//h2/text()')[0].title()
-        
-        oc.add(DirectoryObject(
-            key = Callback(Shows, section_id=section_id, title=title),
-            title = title
-        ))
+		episodes_available = False
 
-    if len(oc) < 1:
-        Log ('still no value for objects')
-        return ObjectContainer(header="Empty", message="There are no sections to list." )
-    else:
-        return oc
+		# Check for at least one free episode available in any season before adding a show to the list
+		for season in show['seasons']:
+			for episode in season['episodes']:
 
-####################################################################################################
-@route(PREFIX + '/shows')
-def Shows(title, section_id):
+				if episode['accesslevel'] == '0':
+					episodes_available = True
+					break
 
-    oc = ObjectContainer()
-    html = HTML.ElementFromURL(BASE_URL + '/shows')
+			if episodes_available:
+				break
 
-    for item in html.xpath('//div[@class="modules"]//section[@data-m-id="%s"]//li' %section_id):
+		if not episodes_available:
+			continue
 
-        url = item.xpath('./a/@href')[0]
-        title = url.split('/')[-1].replace('-', ' ').title()
-        url = BASE_URL + url
-        thumb = item.xpath('.//img/@src')[0]
-        if '/movies-and-specials/' in url:
-            continue
-        
-        oc.add(DirectoryObject(
-            key = Callback(Episodes, url=url, title=title),
-            title = title,
-            thumb = Resource.ContentsOfURLWithFallback(url=thumb, fallback=ICON)
-        ))
+		title = show['name']
+		summary = show['description']
+		thumb = show['thumbnail']['v1x']
+		id = show['api_endpoint'].split('/')[-1]
 
-    if len(oc) < 1:
-        Log ('still no value for objects')
-        return ObjectContainer(header="Empty", message="There are no shows for this section." )
-    else:
-        return oc
+		oc.add(DirectoryObject(
+			key = Callback(Season, title=title, thumb=thumb, id=id),
+			title = title,
+			summary = summary,
+			thumb = thumb
+		))
+
+	return oc
 
 ####################################################################################################
-@route(PREFIX + '/episodes')
-def Episodes(url, title):
+@route('/video/freeform/season')
+def Season(title, thumb, id):
 
-    oc = ObjectContainer(title2=title)
-    show_id = GetShowID(url)
-    json = JSON.ObjectFromURL(VIDEOS % (show_id))
+	oc = ObjectContainer(title2=title)
+	json_obj = JSON.ObjectFromString(GetData(SHOW_EPISODES % (id)))
 
-    for episode in json['video']:
+	# Check for at least one free episode available in a season before adding the season to the list
+	for season in json_obj['seasons']:
 
-        if 'accesslevel' in episode and episode['accesslevel'] != "0":
-            continue
+		episodes_available = False
 
-        oc.add(EpisodeObject(
-            url = episode['url'],
-            title = episode['title'],
-            summary = episode['longdescription'],
-            index = int(episode['episodenumber']),
-            season = int(episode['season']['num']),
-            duration = int(episode['duration']['value']),
-            originally_available_at = Datetime.ParseDate(episode['airdates']['airdate'][0]).date(),
-            thumb = Resource.ContentsOfURLWithFallback(url=episode['thumbnails']['thumbnail'][0]['value'])
-        ))
+		for episode in season['episodes']:
 
-    if len(oc) < 1:
-        Log ('still no value for objects')
-        return ObjectContainer(header="Empty", message="There are no unlocked videos for this show." )
-    else:
-        return oc
+			if episode['accesslevel'] == '0':
+				episodes_available = True
+				break
+
+		if not episodes_available:
+			continue
+
+		season_num = season['num']
+		title = 'Season %s' % (season_num)
+
+		oc.add(DirectoryObject(
+			key = Callback(Episodes, title=title, id=id, season_num=season_num),
+			title = title,
+			thumb = thumb
+		))
+
+	return oc
 
 ####################################################################################################
-@route(PREFIX + '/getshowid')
-def GetShowID(url):
+@route('/video/freeform/episodes')
+def Episodes(title, id, season_num):
 
-    try: content = HTTP.Request(url, cacheTime=CACHE_1DAY).content
-    except: content = ''
-    try: show_id = RE_SHOW_ID.search(content).group(1)
-    except: show_id = ''
+	oc = ObjectContainer(title2=title)
+	json_obj = JSON.ObjectFromString(GetData(SHOW_EPISODES % (id)))
 
-    return show_id
+	for season in json_obj['seasons']:
+
+		if season['num'] != season_num:
+			continue
+
+		for episode in season['episodes']:
+
+			if episode['accesslevel'] != '0':
+				continue
+
+			oc.add(EpisodeObject(
+				url = 'abc://%s' % (episode['partner_api_id']),
+				title = episode['name'],
+				summary = episode['description'],
+				index = int(episode['num']),
+				season = int(episode['season_num']),
+				duration = int(float(episode['duration']) * 1000),
+				originally_available_at = Datetime.ParseDate(episode['airdate'].split('T')[0]).date(),
+				thumb = Resource.ContentsOfURLWithFallback(url=episode['thumbnail']['v1x'])
+			))
+
+	return oc
+
+####################################################################################################
+@route('/video/abc/getdata')
+def GetData(url):
+
+	# Quick and dirty workaround to get this to work on Windows
+	# Do not validate ssl certificate
+	# http://stackoverflow.com/questions/27835619/ssl-certificate-verify-failed-error
+	if 'Windows' in Platform.OS:
+		req = urllib2.Request(url, headers=HTTP_HEADERS)
+		ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLSv1)
+		data = urllib2.urlopen(req, context=ssl_context).read()
+	else:
+		data = HTTP.Request(url, headers=HTTP_HEADERS).content
+
+	return data
