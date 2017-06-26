@@ -107,7 +107,7 @@ def Episodes(title, id, season_num):
 				continue
 
 			oc.add(EpisodeObject(
-				url = 'abc://%s' % (episode['partner_api_id']),
+				url = 'freeform://%s' % (episode['partner_api_id']),
 				title = episode['name'],
 				summary = episode['description'],
 				index = int(episode['num']),
