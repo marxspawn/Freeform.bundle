@@ -43,14 +43,14 @@ def MainMenu():
 		if not episodes_available:
 			continue
 
-		title = show['name']
+		show_title = show['name']
 		summary = show['description']
 		thumb = show['thumbnail']['v1x']
 		id = show['api_endpoint'].split('/')[-1]
 
 		oc.add(DirectoryObject(
-			key = Callback(Season, title=title, thumb=thumb, id=id),
-			title = title,
+			key = Callback(Season, show_title=show_title, thumb=thumb, id=id),
+			title = show_title,
 			summary = summary,
 			thumb = thumb
 		))
@@ -59,9 +59,9 @@ def MainMenu():
 
 ####################################################################################################
 @route('/video/freeform/season')
-def Season(title, thumb, id):
+def Season(show_title, thumb, id):
 
-	oc = ObjectContainer(title2=title)
+	oc = ObjectContainer(title2=show_title)
 	json_obj = JSON.ObjectFromString(GetData(SHOW_EPISODES % (id)))
 
 	# Check for at least one free episode available in a season before adding the season to the list
@@ -82,7 +82,7 @@ def Season(title, thumb, id):
 		title = 'Season %s' % (season_num)
 
 		oc.add(DirectoryObject(
-			key = Callback(Episodes, title=title, id=id, season_num=season_num),
+			key = Callback(Episodes, show_title=show_title, title=title, id=id, season_num=season_num),
 			title = title,
 			thumb = thumb
 		))
@@ -91,7 +91,7 @@ def Season(title, thumb, id):
 
 ####################################################################################################
 @route('/video/freeform/episodes')
-def Episodes(title, id, season_num):
+def Episodes(show_title, title, id, season_num):
 
 	oc = ObjectContainer(title2=title)
 	json_obj = JSON.ObjectFromString(GetData(SHOW_EPISODES % (id)))
@@ -108,6 +108,7 @@ def Episodes(title, id, season_num):
 
 			oc.add(EpisodeObject(
 				url = 'freeform://%s' % (episode['partner_api_id']),
+				show = show_title,
 				title = episode['name'],
 				summary = episode['description'],
 				index = int(episode['num']),
