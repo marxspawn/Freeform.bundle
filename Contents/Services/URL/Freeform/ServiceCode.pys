@@ -1,3 +1,4 @@
+ICON = 'icon-default.jpg'
 METADATA_URL = 'http://api.contents.watchabc.go.com/vp2/ws/s/contents/3000/videos/002/001/-1/-1/-1/%s/-1/-1.json'
 ENTITLEMENT_URL = 'http://api.entitlement.watchabc.go.com/vp2/ws-secure/entitlement/2020/authorize.json'
 
@@ -28,7 +29,7 @@ def MetadataObjectForURL(url):
 		originally_available_at = date,
 		season = int(json_obj['video'][0]['season']['num']),
 		index = int(json_obj['video'][0]['episodenumber']),
-		thumb = Resource.ContentsOfURLWithFallback(url=json_obj['video'][0]['thumbnails']['thumbnail'][-1]['value'])
+		thumb = Resource.ContentsOfURLWithFallback(url=json_obj['video'][0]['thumbnails']['thumbnail'][-1]['value'], fallback=ICON)
 	)
 
 ####################################################################################################
